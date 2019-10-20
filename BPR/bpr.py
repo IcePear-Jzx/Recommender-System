@@ -39,8 +39,6 @@ class BPRData(data.Dataset):
         self.data = {}
         self.load_data()
         self.samples = []
-        if self.training:
-            self.gen_samples()
 
     def __getitem__(self, index):
         user_id = self.samples[index][0]
@@ -77,7 +75,7 @@ def get_recall(model, test_dataset, top_k):
     total_count = 0
     item_i = item_j = torch.LongTensor(np.array(range(91599)))
     for user_id, item_set in test_dataset.data.items():
-        if user_id >= 10:
+        if user_id >= 100:
             break
         user = torch.ones(91599, dtype=torch.int64) * user_id
 
@@ -93,28 +91,32 @@ def get_recall(model, test_dataset, top_k):
 
 if __name__ == '__main__':
 
-    train_dataset = BPRData(path='../amazon-book/train.txt', training=True)
-    test_dataset = BPRData(path='../amazon-book/test.txt', training=False)
+    train_dataset = BPRData(path='amazon-book/train.txt', training=True)
+    test_dataset = BPRData(path='amazon-book/test.txt', training=False)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=4096, shuffle=True, num_workers=4)
     test_loader = data.DataLoader(test_dataset,
                                   batch_size=test_dataset.user_num, shuffle=False, num_workers=0)
 
     model = BPR()
+    model.cuda()
     optimizer = optim.Adam(model.parameters())
 
-    for epoch in range(1000):
-        print('Epoch:', epoch)
+    for epoch in range(10001):
         model.train()
         train_loader.dataset.gen_samples()
-
+        
         for user, item_i, item_j in train_loader:
+            user = user.cuda()
+            item_i = item_i.cuda()
+            item_j = item_j.cuda()
             model.zero_grad()
             prediction_i, prediction_j = model(user, item_i, item_j)
             loss = - (prediction_i - prediction_j).sigmoid().log().sum()
             loss.backward()
-            optimizer.step()
+            optimizer.step() 
 
-        model.eval()
-        recall = get_recall(model, test_dataset, 10)
-        print('Recall:', recall)
+        if epoch % 10 == 0:
+            model.eval()
+            recall = get_recall(model, test_dataset, 20)
+            print('Epoch{} Recall@20: {}'.format(epoch, recall))
