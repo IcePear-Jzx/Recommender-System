@@ -68,7 +68,7 @@ class BPRData(data.Dataset):
     def gen_samples(self):
         self.samples = []
         for user_id in range(self.user_num):
-            item_i = random.choice(self.data[user_id])
+            item_i = np.random.choice(self.data[user_id])
             item_j = np.random.randint(self.item_num)
             while item_j in self.data[user_id]:
                 item_j = np.random.randint(self.item_num)
