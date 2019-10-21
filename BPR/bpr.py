@@ -4,11 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data
 import random
-import os
 import time
-
-
-# os.environ["CUDA_VISIBLE_DEVICES"] = 0
 
 
 class BPR(nn.Module):
@@ -16,7 +12,7 @@ class BPR(nn.Module):
         super().__init__()
         self.user_num = 52643
         self.item_num = 91599
-        self.factor_num = 32
+        self.factor_num = 16
 
         self.embed_user = nn.Embedding(self.user_num, self.factor_num)
         self.embed_item = nn.Embedding(self.item_num, self.factor_num)
@@ -68,10 +64,10 @@ class BPRData(data.Dataset):
     def gen_samples(self):
         self.samples = []
         for user_id in range(self.user_num):
-            item_i = np.random.choice(self.data[user_id])
-            item_j = np.random.randint(self.item_num)
+            item_i = random.choice(self.data[user_id])
+            item_j = random.randint(0, self.item_num - 1)
             while item_j in self.data[user_id]:
-                item_j = np.random.randint(self.item_num)
+                item_j = random.randint(0, self.item_num - 1)
             self.samples.append((user_id, item_i, item_j))
 
 
