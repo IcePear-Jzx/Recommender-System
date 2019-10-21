@@ -12,7 +12,8 @@ class BPR(nn.Module):
         super().__init__()
         self.user_num = 52643
         self.item_num = 91599
-        self.factor_num = 16
+        self.factor_num = 32
+        self.reg = 0.01
 
         self.embed_user = nn.Embedding(self.user_num, self.factor_num)
         self.embed_item = nn.Embedding(self.item_num, self.factor_num)
@@ -27,7 +28,11 @@ class BPR(nn.Module):
 
         prediction_i = (user * item_i).sum(dim=-1)
         prediction_j = (user * item_j).sum(dim=-1)
-        return prediction_i, prediction_j
+
+        regularizer = self.reg * (torch.sum(user ** 2) + 
+            torch.sum(item_i ** 2) + torch.sum(item_j ** 2))
+        loss = regularizer - (prediction_i - prediction_j).sigmoid().log().sum()
+        return prediction_i, prediction_j, loss
 
 
 class BPRData(data.Dataset):
@@ -83,7 +88,7 @@ def get_recall(model, test_dataset, top_k):
         user = torch.ones(91599, dtype=torch.int64) * user_id
         user = user.cuda()
 
-        prediction_i, prediction_j = model(user, item_i, item_j)
+        prediction_i, _, _ = model(user, item_i, item_j)
         _, indices = torch.topk(prediction_i, top_k)
         recommends = torch.take(item_i, indices).cpu().numpy().tolist()
 
@@ -117,8 +122,7 @@ if __name__ == '__main__':
             item_i = item_i.cuda()
             item_j = item_j.cuda()
             model.zero_grad()
-            prediction_i, prediction_j = model(user, item_i, item_j)
-            loss = - (prediction_i - prediction_j).sigmoid().log().sum()
+            prediction_i, prediction_j, loss = model(user, item_i, item_j)
             loss.backward()
             optimizer.step() 
         # t3 = time.time()
