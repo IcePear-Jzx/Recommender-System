@@ -89,7 +89,7 @@ def get_recall(model, test_dataset, top_k):
 
         prediction_i, prediction_j = model(user, item_i, item_j)
         _, indices = torch.topk(prediction_i, top_k)
-        recommends = torch.take(item_i, indices).numpy().tolist()
+        recommends = torch.take(item_i, indices).cpu().numpy().tolist()
 
         hit_count += len(set(item_set) & set(recommends))
         total_count += len(item_set)
