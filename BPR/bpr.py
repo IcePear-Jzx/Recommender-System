@@ -12,8 +12,8 @@ class BPR(nn.Module):
         super().__init__()
         self.user_num = 52643
         self.item_num = 91599
-        self.factor_num = 32
-        self.reg = 0.01
+        self.factor_num = 64
+        self.reg = 0.001
 
         self.embed_user = nn.Embedding(self.user_num, self.factor_num)
         self.embed_item = nn.Embedding(self.item_num, self.factor_num)
@@ -76,23 +76,28 @@ class BPRData(data.Dataset):
             self.samples.append((user_id, item_i, item_j))
 
 
-def get_recall(model, test_dataset, top_k):
+def get_recall(model, train_dataset, test_dataset, top_k):
     hit_count = 0
     total_count = 0
     item_i = item_j = torch.LongTensor(np.array(range(91599)))
     item_i = item_i.cuda()
     item_j = item_j.cuda()
-    for user_id, item_set in test_dataset.data.items():
-        if user_id >= 100:
-            break
+    for user_id in range(100):
+        item_set = test_dataset.data[user_id]
+
         user = torch.ones(91599, dtype=torch.int64) * user_id
         user = user.cuda()
 
         prediction_i, _, _ = model(user, item_i, item_j)
         _, indices = torch.topk(prediction_i, top_k)
         recommends = torch.take(item_i, indices).cpu().numpy().tolist()
+        train_positive = set(train_dataset.data[user_id]) & set(recommends)
+        while len(train_positive) + top_k > len(recommends):
+            _, indices = torch.topk(prediction_i, top_k + len(train_positive))
+            recommends = torch.take(item_i, indices).cpu().numpy().tolist()
+            train_positive = set(train_dataset.data[user_id]) & set(recommends)
 
-        hit_count += len(set(item_set) & set(recommends))
+        hit_count += len(set(item_set) & (set(recommends) - train_positive))
         total_count += len(item_set)
 
     return hit_count / total_count
@@ -130,5 +135,5 @@ if __name__ == '__main__':
 
         if epoch % 10 == 0:
             model.eval()
-            recall = get_recall(model, test_dataset, 20)
+            recall = get_recall(model, train_dataset, test_dataset, 20)
             print('Epoch{} Recall@20: {}'.format(epoch, recall))
