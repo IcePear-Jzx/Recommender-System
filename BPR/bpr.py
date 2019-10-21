@@ -112,9 +112,9 @@ if __name__ == '__main__':
 
     for epoch in range(10001):
         model.train()
-        t1 = time.time()
+        # t1 = time.time()
         train_loader.dataset.gen_samples()
-        t2 = time.time()
+        # t2 = time.time()
         
         for user, item_i, item_j in train_loader:
             user = user.cuda()
@@ -125,8 +125,8 @@ if __name__ == '__main__':
             loss = - (prediction_i - prediction_j).sigmoid().log().sum()
             loss.backward()
             optimizer.step() 
-        t3 = time.time()
-        print(t2-t1, t3-t2)
+        # t3 = time.time()
+        # print(t2-t1, t3-t2)
 
         if epoch % 10 == 0:
             model.eval()
