@@ -79,10 +79,13 @@ def get_recall(model, test_dataset, top_k):
     hit_count = 0
     total_count = 0
     item_i = item_j = torch.LongTensor(np.array(range(91599)))
+    item_i = item_i.cuda()
+    item_j = item_j.cuda()
     for user_id, item_set in test_dataset.data.items():
         if user_id >= 100:
             break
         user = torch.ones(91599, dtype=torch.int64) * user_id
+        user = user.cuda()
 
         prediction_i, prediction_j = model(user, item_i, item_j)
         _, indices = torch.topk(prediction_i, top_k)
