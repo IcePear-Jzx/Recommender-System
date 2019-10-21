@@ -4,6 +4,11 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data
 import random
+import os
+import time
+
+
+# os.environ["CUDA_VISIBLE_DEVICES"] = 0
 
 
 class BPR(nn.Module):
@@ -11,7 +16,7 @@ class BPR(nn.Module):
         super().__init__()
         self.user_num = 52643
         self.item_num = 91599
-        self.factor_num = 16
+        self.factor_num = 32
 
         self.embed_user = nn.Embedding(self.user_num, self.factor_num)
         self.embed_item = nn.Embedding(self.item_num, self.factor_num)
@@ -104,7 +109,9 @@ if __name__ == '__main__':
 
     for epoch in range(10001):
         model.train()
+        t1 = time.time()
         train_loader.dataset.gen_samples()
+        t2 = time.time()
         
         for user, item_i, item_j in train_loader:
             user = user.cuda()
@@ -115,6 +122,8 @@ if __name__ == '__main__':
             loss = - (prediction_i - prediction_j).sigmoid().log().sum()
             loss.backward()
             optimizer.step() 
+        t3 = time.time()
+        print(t2-t1, t3-t2)
 
         if epoch % 10 == 0:
             model.eval()
