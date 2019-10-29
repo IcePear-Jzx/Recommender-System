@@ -105,8 +105,8 @@ def get_recall(model, train_dataset, test_dataset, top_k):
 
 if __name__ == '__main__':
 
-    train_dataset = BPRData(path='amazon-book/train.txt', training=True)
-    test_dataset = BPRData(path='amazon-book/test.txt', training=False)
+    train_dataset = BPRData(path='Amazon-Book/train.txt', training=True)
+    test_dataset = BPRData(path='Amazon-Book/test.txt', training=False)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=4096, shuffle=True, num_workers=4)
     test_loader = data.DataLoader(test_dataset,
