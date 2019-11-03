@@ -3,35 +3,72 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data
-from scipy.sparse import coo_matrix
-from scipy.sparse import vstack
 from scipy import sparse
 import random
 import time
 
 
-class GNNLayer(Module):
-    def __init__(self,inF,outF):
+class GNNLayer(nn.Module):
+    def __init__(self, inF, outF, train_dataset):
         super().__init__()
+        self.user_num = 52643
+        self.item_num = 91599
         self.inF = inF
         self.outF = outF
         self.linear = torch.nn.Linear(in_features=inF,out_features=outF)
         self.interActTransform = torch.nn.Linear(in_features=inF,out_features=outF)
+        nn.init.normal_(self.linear.weight, std=0.01)
+        nn.init.normal_(self.interActTransform.weight, std=0.01)
 
-    def forward(self, laplacianMat,selfLoop,features):
-        L1 = laplacianMat + selfLoop
-        L2 = laplacianMat
-        L1 = L1
-        inter_feature = torch.mul(features,features)
+        data = []
+        row = []
+        col = []
+        for u in range(self.user_num):
+            for i in train_dataset.data[u]:
+                data.append(1)
+                row.append(u)
+                col.append(i)
 
-        inter_part1 = self.linear(torch.sparse.mm(L1,features))
-        inter_part2 = self.interActTransform(torch.sparse.mm(L2,inter_feature))
+        self.R = sparse.coo_matrix((data, (row, col)), shape=(self.user_num, self.item_num))
+        empty1 = sparse.coo_matrix((self.user_num, self.user_num))
+        empty2 = sparse.coo_matrix((self.item_num, self.item_num))
+        A_upper = sparse.hstack([empty1, self.R])
+        A_lower = sparse.hstack([self.R.transpose(), empty2])
+        self.A = sparse.vstack([A_upper, A_lower])
+        sumArr = (self.A > 0).sum(axis=1)
+        diag = list(np.array(sumArr.flatten())[0])
+        diag = np.power(diag,-0.5)
+        self.sqrt_D = sparse.diags(diag)
+        self.L = self.sqrt_D * self.A * self.sqrt_D
+        self.L = sparse.coo_matrix(self.L)
+        I = sparse.eye(self.user_num + self.item_num)
+        self.L1 = sparse.coo_matrix(self.L + I)
+        self.L2 = sparse.coo_matrix(self.L)
+        row = self.L1.row
+        col = self.L1.col
+        i = torch.LongTensor([row, col])
+        data = torch.FloatTensor(self.L1.data)
+        self.L1 = torch.sparse.FloatTensor(i, data).cuda()
+        row = self.L2.row
+        col = self.L2.col
+        i = torch.LongTensor([row, col])
+        data = torch.FloatTensor(self.L2.data)
+        self.L2 = torch.sparse.FloatTensor(i, data).cuda()
 
-        return inter_part1+inter_part2
+    def forward(self, embed):
+        # t1 = time.time()
+        embed2 = torch.mul(embed, embed)
+        # t2 = time.time()
+        inter_part1 = self.linear(torch.sparse.mm(self.L1, embed))
+        # t3 = time.time()
+        inter_part2 = self.interActTransform(torch.sparse.mm(self.L2, embed2))
+        # t4 = time.time()
+        # print(t2 - t1, t3 - t2, t4 - t3)
+        return inter_part1 + inter_part2
 
 
-class BPR(nn.Module):
-    def __init__(self):
+class NGCF(nn.Module):
+    def __init__(self, train_dataset):
         super().__init__()
         self.user_num = 52643
         self.item_num = 91599
@@ -43,16 +80,27 @@ class BPR(nn.Module):
         nn.init.normal_(self.embed_user.weight, std=0.01)
         nn.init.normal_(self.embed_item.weight, std=0.01)
 
-        self.GNNLayer1 = GNNLayer(R)
-        self.GNNLayer2 = GNNLayer(R)
+        self.GNNLayer1 = GNNLayer(self.factor_num, self.factor_num, train_dataset)
+        self.GNNLayer2 = GNNLayer(self.factor_num, self.factor_num, train_dataset)
+
+        self.all_user = torch.LongTensor([i for i in range(self.user_num)]).cuda()
+        self.all_item = torch.LongTensor([i for i in range(self.item_num)]).cuda()
 
     def forward(self, user, item_i, item_j):
-        user = self.embed_user(user)
-        user = self.GNNLayer1(user)
-        user = self.GNNLayer2(user)
-        item_i = self.embed_item(item_i)
-        item_i = self.
-        item_j = self.embed_item(item_j)
+        # t1 = time.time()
+        all_user_embed = self.embed_user(self.all_user)
+        all_item_embed = self.embed_item(self.all_item)
+        embed = torch.cat([all_user_embed, all_item_embed], dim=0)
+        # t2 = time.time()
+        g_embed_1 = self.GNNLayer1(embed)
+        # g_embed_2 = self.GNNLayer2(g_embed_1)
+        embed = torch.cat([embed, g_embed_1], dim=1)
+        # t3 = time.time()
+        # print(t2 - t1, t3 - t2)
+
+        user = embed[user]
+        item_i = embed[self.user_num + item_i]
+        item_j = embed[self.user_num + item_j]
 
         prediction_i = (user * item_i).sum(dim=-1)
         prediction_j = (user * item_j).sum(dim=-1)
@@ -63,7 +111,7 @@ class BPR(nn.Module):
         return prediction_i, prediction_j, loss
 
 
-class BPRData(data.Dataset):
+class NGCFData(data.Dataset):
     def __init__(self, path, training=True):
         super().__init__()
         self.path = path
@@ -110,7 +158,7 @@ def get_recall(model, train_dataset, test_dataset, top_k):
     item_i = item_j = torch.LongTensor(np.array(range(91599)))
     item_i = item_i.cuda()
     item_j = item_j.cuda()
-    for user_id in range(100):
+    for user_id in range(20):
         item_set = test_dataset.data[user_id]
 
         user = torch.ones(91599, dtype=torch.int64) * user_id
@@ -133,14 +181,14 @@ def get_recall(model, train_dataset, test_dataset, top_k):
 
 if __name__ == '__main__':
 
-    train_dataset = BPRData(path='Amazon-Book/train.txt', training=True)
-    test_dataset = BPRData(path='Amazon-Book/test.txt', training=False)
+    train_dataset = NGCFData(path='Amazon-Book/train.txt', training=True)
+    test_dataset = NGCFData(path='Amazon-Book/test.txt', training=False)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=4096, shuffle=True, num_workers=4)
     test_loader = data.DataLoader(test_dataset,
                                   batch_size=test_dataset.user_num, shuffle=False, num_workers=0)
 
-    model = BPR()
+    model = NGCF(train_dataset)
     model.cuda()
     optimizer = optim.Adam(model.parameters())
 
@@ -149,7 +197,7 @@ if __name__ == '__main__':
         # t1 = time.time()
         train_loader.dataset.gen_samples()
         # t2 = time.time()
-        
+
         for user, item_i, item_j in train_loader:
             user = user.cuda()
             item_i = item_i.cuda()
@@ -157,11 +205,12 @@ if __name__ == '__main__':
             model.zero_grad()
             prediction_i, prediction_j, loss = model(user, item_i, item_j)
             loss.backward()
-            optimizer.step() 
+            optimizer.step()
         # t3 = time.time()
         # print(t2-t1, t3-t2)
-
         if epoch % 10 == 0:
             model.eval()
             recall = get_recall(model, train_dataset, test_dataset, 20)
             print('Epoch{} Recall@20: {}'.format(epoch, recall))
+        else:
+            print('Epoch{}'.format(epoch))
