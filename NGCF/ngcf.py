@@ -15,8 +15,8 @@ class GNNLayer(nn.Module):
         self.item_num = 91599
         self.inF = inF
         self.outF = outF
-        self.linear = torch.nn.Linear(in_features=inF,out_features=outF)
-        self.interActTransform = torch.nn.Linear(in_features=inF,out_features=outF)
+        self.linear = nn.Linear(in_features=inF,out_features=outF)
+        self.interActTransform = nn.Linear(in_features=inF,out_features=outF)
         nn.init.normal_(self.linear.weight, std=0.01)
         nn.init.normal_(self.interActTransform.weight, std=0.01)
 
@@ -35,9 +35,9 @@ class GNNLayer(nn.Module):
         A_upper = sparse.hstack([empty1, self.R])
         A_lower = sparse.hstack([self.R.transpose(), empty2])
         self.A = sparse.vstack([A_upper, A_lower])
-        sumArr = (self.A > 0).sum(axis=1)
+        sumArr = self.A.sum(axis=1)
         diag = list(np.array(sumArr.flatten())[0])
-        diag = np.power(diag,-0.5)
+        diag = np.power(diag, -0.5)
         self.sqrt_D = sparse.diags(diag)
         self.L = self.sqrt_D * self.A * self.sqrt_D
         self.L = sparse.coo_matrix(self.L)
@@ -73,7 +73,7 @@ class NGCF(nn.Module):
         self.user_num = 52643
         self.item_num = 91599
         self.factor_num = 64
-        self.reg = 0.001
+        self.reg = 0
 
         self.embed_user = nn.Embedding(self.user_num, self.factor_num)
         self.embed_item = nn.Embedding(self.item_num, self.factor_num)
@@ -93,8 +93,10 @@ class NGCF(nn.Module):
         embed = torch.cat([all_user_embed, all_item_embed], dim=0)
         # t2 = time.time()
         g_embed_1 = self.GNNLayer1(embed)
-        # g_embed_2 = self.GNNLayer2(g_embed_1)
-        embed = torch.cat([embed, g_embed_1], dim=1)
+        g_embed_1 = nn.ReLU()(g_embed_1)
+        g_embed_2 = self.GNNLayer2(g_embed_1)
+        g_embed_2 = nn.ReLU()(g_embed_2)
+        embed = torch.cat([embed.clone(), g_embed_1.clone(), g_embed_2], dim=1)
         # t3 = time.time()
         # print(t2 - t1, t3 - t2)
 
@@ -184,7 +186,7 @@ if __name__ == '__main__':
     train_dataset = NGCFData(path='Amazon-Book/train.txt', training=True)
     test_dataset = NGCFData(path='Amazon-Book/test.txt', training=False)
     train_loader = data.DataLoader(train_dataset,
-                                   batch_size=4096, shuffle=True, num_workers=4)
+                                   batch_size=train_dataset.user_num, shuffle=True, num_workers=4)
     test_loader = data.DataLoader(test_dataset,
                                   batch_size=test_dataset.user_num, shuffle=False, num_workers=0)
 
@@ -208,7 +210,7 @@ if __name__ == '__main__':
             optimizer.step()
         # t3 = time.time()
         # print(t2-t1, t3-t2)
-        if epoch % 10 == 0:
+        if epoch % 20 == 0:
             model.eval()
             recall = get_recall(model, train_dataset, test_dataset, 20)
             print('Epoch{} Recall@20: {}'.format(epoch, recall))
