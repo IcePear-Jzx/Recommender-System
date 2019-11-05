@@ -155,24 +155,30 @@ class NGCFData(data.Dataset):
 
 
 def get_recall(model, train_dataset, test_dataset, top_k):
+    item = torch.LongTensor(np.array(range(91599)))
+
+    users = []
+    items = []
+    for user_id in range(50):
+        user = torch.ones(91599, dtype=torch.int64) * user_id
+        users.append(user)
+        items.append(item)
+    
+    users = torch.cat(users).cuda()
+    items = torch.cat(items).cuda()
+    predictions, _, _ = model(users, items, items)
+
     hit_count = 0
     total_count = 0
-    item_i = item_j = torch.LongTensor(np.array(range(91599)))
-    item_i = item_i.cuda()
-    item_j = item_j.cuda()
-    for user_id in range(20):
+    for user_id in range(50):
         item_set = test_dataset.data[user_id]
-
-        user = torch.ones(91599, dtype=torch.int64) * user_id
-        user = user.cuda()
-
-        prediction_i, _, _ = model(user, item_i, item_j)
-        _, indices = torch.topk(prediction_i, top_k)
-        recommends = torch.take(item_i, indices).cpu().numpy().tolist()
+        prediction = predictions[user_id * 91599 : (user_id + 1) * 91599].cpu()
+        _, indices = torch.topk(prediction, top_k)
+        recommends = torch.take(item, indices).cpu().numpy().tolist()
         train_positive = set(train_dataset.data[user_id]) & set(recommends)
         while len(train_positive) + top_k > len(recommends):
-            _, indices = torch.topk(prediction_i, top_k + len(train_positive))
-            recommends = torch.take(item_i, indices).cpu().numpy().tolist()
+            _, indices = torch.topk(prediction, top_k + len(train_positive))
+            recommends = torch.take(item, indices).cpu().numpy().tolist()
             train_positive = set(train_dataset.data[user_id]) & set(recommends)
 
         hit_count += len(set(item_set) & (set(recommends) - train_positive))
