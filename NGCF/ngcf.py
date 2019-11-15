@@ -146,43 +146,47 @@ class NGCFData(data.Dataset):
 
     def gen_samples(self):
         self.samples = []
-        for user_id in range(self.user_num):
-            item_i = random.choice(self.data[user_id])
-            item_j = random.randint(0, self.item_num - 1)
-            while item_j in self.data[user_id]:
+        for _ in range(20):
+            for user_id in range(self.user_num):
+                item_i = random.choice(self.data[user_id])
                 item_j = random.randint(0, self.item_num - 1)
-            self.samples.append((user_id, item_i, item_j))
+                while item_j in self.data[user_id]:
+                    item_j = random.randint(0, self.item_num - 1)
+                self.samples.append((user_id, item_i, item_j))
 
 
 def get_recall(model, train_dataset, test_dataset, top_k):
-    item = torch.LongTensor(np.array(range(91599)))
-
-    users = []
-    items = []
-    for user_id in range(50):
-        user = torch.ones(91599, dtype=torch.int64) * user_id
-        users.append(user)
-        items.append(item)
-    
-    users = torch.cat(users).cuda()
-    items = torch.cat(items).cuda()
-    predictions, _, _ = model(users, items, items)
-
     hit_count = 0
     total_count = 0
-    for user_id in range(50):
-        item_set = test_dataset.data[user_id]
-        prediction = predictions[user_id * 91599 : (user_id + 1) * 91599].cpu()
-        _, indices = torch.topk(prediction, top_k)
-        recommends = torch.take(item, indices).cpu().numpy().tolist()
-        train_positive = set(train_dataset.data[user_id]) & set(recommends)
-        while len(train_positive) + top_k > len(recommends):
-            _, indices = torch.topk(prediction, top_k + len(train_positive))
+    item = torch.LongTensor(np.array(range(91599)))
+
+    for _ in range(5):
+        random_users = random.sample(range(52643), 20)
+        users = []
+        items = []
+        for user_id in random_users:
+            user = torch.ones(91599, dtype=torch.int64) * user_id
+            users.append(user)
+            items.append(item)
+        
+        users = torch.cat(users).cuda()
+        items = torch.cat(items).cuda()
+        predictions, _, _ = model(users, items, items)
+
+        for user_id in random_users:
+            item_set = test_dataset.data[user_id]
+            index = random_users.index(user_id)
+            prediction = predictions[index * 91599 : (index + 1) * 91599].cpu()
+            _, indices = torch.topk(prediction, top_k)
             recommends = torch.take(item, indices).cpu().numpy().tolist()
             train_positive = set(train_dataset.data[user_id]) & set(recommends)
+            while len(train_positive) + top_k > len(recommends):
+                _, indices = torch.topk(prediction, top_k + len(train_positive))
+                recommends = torch.take(item, indices).cpu().numpy().tolist()
+                train_positive = set(train_dataset.data[user_id]) & set(recommends)
 
-        hit_count += len(set(item_set) & (set(recommends) - train_positive))
-        total_count += len(item_set)
+            hit_count += len(set(item_set) & (set(recommends) - train_positive))
+            total_count += len(item_set)
 
     return hit_count / total_count
 
@@ -192,7 +196,7 @@ if __name__ == '__main__':
     train_dataset = NGCFData(path='Amazon-Book/train.txt', training=True)
     test_dataset = NGCFData(path='Amazon-Book/test.txt', training=False)
     train_loader = data.DataLoader(train_dataset,
-                                   batch_size=train_dataset.user_num, shuffle=True, num_workers=4)
+                                   batch_size=train_dataset.user_num * 20, shuffle=True, num_workers=4)
     test_loader = data.DataLoader(test_dataset,
                                   batch_size=test_dataset.user_num, shuffle=False, num_workers=0)
 
@@ -216,7 +220,7 @@ if __name__ == '__main__':
             optimizer.step()
         # t3 = time.time()
         # print(t2-t1, t3-t2)
-        if epoch % 20 == 0:
+        if epoch % 10 == 0:
             model.eval()
             recall = get_recall(model, train_dataset, test_dataset, 20)
             print('Epoch{} Recall@20: {}'.format(epoch, recall))
